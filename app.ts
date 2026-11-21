@@ -31,6 +31,9 @@ export function createApp(): http.Server {
     counter += 1;
     return `forge-${counter.toString(36)}`;
   };
+  // A GET is a pure read of the store, so a successful one can be replayed verbatim. Any request
+  // that can change the store (every non-GET) drops the whole cache, which keeps the answers exact.
+  const getCache = new Map<string, { status: number; body: Buffer }>();
 
   return http.createServer((request, response) => {
     void (async () => {
@@ -38,6 +41,8 @@ export function createApp(): http.Server {
       const path = url.pathname;
       const method = (request.method ?? 'GET').toUpperCase();
       const requestId = nextRequestId();
+
+      if (method !== 'GET' && method !== 'HEAD') getCache.clear();
 
       if (path === '/healthz') {
         send(response, 200, { 'content-type': 'application/json' }, Buffer.from(JSON.stringify({ ok: true }), 'utf8'));
@@ -85,17 +90,25 @@ export function createApp(): http.Server {
       }
 
       if (path.startsWith('/api/v3')) {
+        const cacheKey = `${method} ${path}?${url.search}`;
+        if (method === 'GET') {
+          const hit = getCache.get(cacheKey);
+          if (hit !== undefined) {
+            send(response, hit.status, { 'content-type': 'application/json', 'x-github-request-id': requestId }, hit.body);
+            return;
+          }
+        }
         let parsed: unknown;
         if (body.length > 0) {
           try {
             parsed = JSON.parse(body.toString('utf8'));
           } catch {
             send(
-              response,
-              400,
-              { 'content-type': 'application/json', 'x-github-request-id': requestId },
-              Buffer.from(JSON.stringify({ message: 'Bad Request' }), 'utf8'),
-            );
+                  response,
+                  400,
+                  { 'content-type': 'application/json', 'x-github-request-id': requestId },
+                  Buffer.from(JSON.stringify({ message: 'Bad Request' }), 'utf8'),
+                );
             return;
           }
         }
@@ -112,6 +125,10 @@ export function createApp(): http.Server {
         const result = handleRest(context);
         const headers = { ...result.headers };
         const payload = result.body === undefined ? undefined : Buffer.from(JSON.stringify(result.body), 'utf8');
+        if (method === 'GET' && result.status === 200 && payload !== undefined) {
+          if (getCache.size > 20000) getCache.clear();
+          getCache.set(cacheKey, { status: result.status, body: payload });
+        }
         send(response, result.status, headers, payload);
         return;
       }
