@@ -583,6 +583,12 @@ const RESOLVERS: Record<string, Resolver> = {
     const node = sub as Record<string, unknown>;
     return Array.isArray(node?.nodes) ? node.nodes.length : 0;
   },
+  'PullRequestFilesConnection.nodes': (_ctx, _args, sub) => (sub as Record<string, unknown>)?.nodes ?? [],
+  'PullRequestFilesConnection.pageInfo': (_ctx, _args, sub) => (sub as Record<string, unknown>)?.pageInfo ?? null,
+  'PullRequestFilesConnection.totalCount': (_ctx, _args, sub) => {
+    const node = sub as Record<string, unknown>;
+    return Array.isArray(node?.nodes) ? node.nodes.length : 0;
+  },
   'PageInfo.hasNextPage': (_ctx, _args, sub) => Boolean((sub as Record<string, unknown>)?.hasNextPage),
   'PageInfo.hasPreviousPage': (_ctx, _args, sub) => Boolean((sub as Record<string, unknown>)?.hasPreviousPage),
   'PageInfo.startCursor': (_ctx, _args, sub) => (sub as Record<string, unknown>)?.startCursor ?? null,

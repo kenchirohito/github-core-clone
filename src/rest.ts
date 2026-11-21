@@ -341,7 +341,7 @@ export function handleRest(context: RestContext): Resp {
         commits.map((commit) => ({
           sha: commit.sha,
           commit: {
-            message: commit.message,
+            message: commit.message.replace(/\n$/, ''),
             author: { name: VIEWER_NAME, email: VIEWER_EMAIL, date: new Date(1700000000 * 1000).toISOString() },
             committer: { name: VIEWER_NAME, email: VIEWER_EMAIL, date: new Date(1700000000 * 1000).toISOString() },
           },
