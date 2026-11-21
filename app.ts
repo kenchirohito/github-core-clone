@@ -18,7 +18,7 @@ function readBody(request: http.IncomingMessage): Promise<Buffer> {
 }
 
 function send(response: http.ServerResponse, status: number, headers: Record<string, string>, body: Buffer | undefined): void {
-  response.writeHead(status, headers);
+  response.writeHead(status, { connection: 'close', ...headers });
   if (body === undefined || body.length === 0) response.end();
   else response.end(body);
 }
