@@ -120,6 +120,7 @@ export function createApp(): http.Server {
         forge,
         baseUrl,
         path,
+        query: url.searchParams,
         method,
         headers: request.headers,
         body,

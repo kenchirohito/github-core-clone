@@ -25,6 +25,7 @@ export interface GitContext {
   baseUrl: string;
   /** The request path, e.g. /owner/repo.git/info/refs */
   path: string;
+  query: URLSearchParams;
   method: string;
   /** Lower-cased request headers. */
   headers: Record<string, string | string[] | undefined>;
@@ -199,6 +200,14 @@ function objectsFor(repo: Repo, wants: string[], haves: string[], depth: number 
     if (object) objects.push(object);
   }
   return { objects, boundary };
+}
+
+function lsRefs(repo: Repo, request: Buffer): Buffer {
+  const lines = decodePktLines(request).map((line) => text(line).replace(/\n$/, ''));
+  const prefixes = lines.filter((line) => line.startsWith('ref-prefix ')).map((line) => line.slice('ref-prefix '.length).trim());
+  const parts = refLines(repo, prefixes);
+  parts.push(flush());
+  return Buffer.concat(parts);
 }
 
 function fetchV2(context: GitContext, repo: Repo, request: Buffer): Buffer {
@@ -380,7 +389,7 @@ export function handleGit(context: GitContext): GitResponse {
 
   if (service === 'info/refs') {
     if (context.method !== 'GET') return jsonResponse(context, 405, { message: 'Method Not Allowed' });
-    const wanted = service === 'git-upload-pack' ? 'git-upload-pack' : 'git-receive-pack';
+    const wanted = context.query.get('service') === 'git-receive-pack' ? 'git-receive-pack' : 'git-upload-pack';
     const protocol = String(context.headers['git-protocol'] ?? '');
     const isV2 = wanted === 'git-upload-pack' && /version=2/.test(protocol);
     const body = isV2 ? v2Advertisement() : v0Advertisement(context, repo, wanted as 'git-upload-pack' | 'git-receive-pack');
@@ -398,7 +407,11 @@ export function handleGit(context: GitContext): GitResponse {
   if (context.method !== 'POST') return jsonResponse(context, 405, { message: 'Method Not Allowed' });
 
   if (service === 'git-upload-pack') {
-    const body = fetchV2(context, repo, context.body);
+    const first = decodePktLines(context.body)[0];
+    const command = first === undefined ? '' : text(first).replace(/\n$/, '');
+    const body = command.startsWith('command=ls-refs')
+      ? lsRefs(repo, context.body)
+      : fetchV2(context, repo, context.body);
     return {
       status: 200,
       headers: {
