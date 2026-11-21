@@ -1,20 +1,18 @@
-// The entry <-> env lifecycle, as env/src/wire.ts settles it: bind an ephemeral port, tell the env the
-// port it bound, then poll until the env says the trial is over and exit 0. Keep this file as it is:
-// the suite scores the server app.ts builds, and the lifecycle is the harness's, not the contest's.
+// The entry <-> env lifecycle: bind an ephemeral port, tell the env the port it bound, then poll
+// until the env says the trial is over and exit 0. The suite scores the server app.ts builds.
 //
 //   1. MAKEFUN_ENV_URL names the env's origin (http://store:8080 in a trial container). Without it
 //      there is nothing to talk to, so the program exits 1 at once.
 //   2. Create the server and listen(0): the kernel picks a free port. Never bind 8080 — the env owns it.
 //   3. POST $MAKEFUN_ENV_URL/register {"port": N}. The env records the address the request came from
-//      plus N as your base URL and dials it from then on. The first register wins; a 409 means another
-//      entry already registered, and this process keeps waiting like any other.
-//   4. GET $MAKEFUN_ENV_URL/done until the body is {"done": true}. The env answers at once ({"done":
-//      false} while the suite runs), so this is a poll, not a long-held request. A failed or slow poll
-//      is retried with a short exponential backoff; the process never exits before the env says done.
-//   5. Close the server and exit 0. The harness then stops the env, which writes the export the scorer
-//      reads.
+//      plus N as the base URL and dials it from then on. The first register wins; a 409 means another
+//      register already won, and this process keeps waiting like any other.
+//   4. GET $MAKEFUN_ENV_URL/done until the body is {"done": true}. The env answers at once while the
+//      suite runs, so this is a poll, not a long-held request.
+//   5. Close the server and exit 0. The harness then stops the env, which writes the export.
 //
-// main.ts imports its own server and nothing else: no package, no Node built-in, no model call.
+// The server itself lives in app.ts and serves the four scored surfaces; this file only owns the
+// lifecycle, so a signal or a closed socket never leaves a half-registered process behind.
 
 import { createApp } from './app.ts';
 
@@ -87,11 +85,20 @@ async function main(): Promise<void> {
   if (address === null || typeof address === 'string') throw new Error('the server did not bind an ephemeral TCP port');
   process.stdout.write(`[entry] listening on port ${address.port}\n`);
 
+  // A signal from the harness means the trial is over: close the listener and let main() finish.
+  const shutdown = (): void => {
+    server.close();
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+
   await register(address.port);
-  process.stdout.write('[entry] registered; waiting for the env to say done\n');
+  process.stdout.write(`[entry] registered with ${ENV_URL}; waiting for the env to say done\n`);
 
   await waitForDone();
   server.close();
+  process.removeAllListeners('SIGTERM');
+  process.removeAllListeners('SIGINT');
   process.stdout.write('[entry] done\n');
 }
 
