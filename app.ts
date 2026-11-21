@@ -17,8 +17,8 @@ function readBody(request: http.IncomingMessage): Promise<Buffer> {
   });
 }
 
-function send(response: http.ServerResponse, status: number, headers: Record<string, string>, body: Buffer | undefined, close = true): void {
-  response.writeHead(status, close ? { connection: 'close', ...headers } : headers);
+function send(response: http.ServerResponse, status: number, headers: Record<string, string>, body: Buffer | undefined): void {
+  response.writeHead(status, headers);
   if (body === undefined || body.length === 0) response.end();
   else response.end(body);
 }
@@ -127,10 +127,7 @@ export function createApp(): http.Server {
         requestId,
       };
       const result = handleGit(gitContext);
-      // A sequential push is faster on a fresh socket; a concurrent clone benefits from a pooled one.
-      const service = url.searchParams.get('service') ?? '';
-      const close = service === 'git-receive-pack' || path.includes('git-receive-pack');
-      send(response, result.status, result.headers, result.body, close);
+      send(response, result.status, result.headers, result.body);
     })().catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       send(
